@@ -150,29 +150,77 @@ func Available() (bool, error) {
 // is present but declines/cancels/exhausts retries, and a non-nil error only on
 // a runtime failure. It displays system UI and must run on an interactive
 // session.
+//
+// ⚠ That fold loses the difference between a person who FAILED and a machine
+// that could not ask. A caller who must tell those apart — anything deciding
+// what to say to somebody, or counting factors — wants [Verify], which returns
+// the result Windows gave.
 func RequireUserConsent(reason string) (bool, error) {
-	cleanup, err := initRuntime()
+	res, err := Verify(reason)
 	if err != nil {
 		return false, err
+	}
+	return res == UserConsentVerified, nil
+}
+
+// Availability reports what UserConsentVerifier says about this machine,
+// unreduced.
+//
+// [Available] answers the yes-or-no question; this one says WHY when the answer
+// is no. The distinction matters to a caller that must tell somebody what to do
+// about it: "no verifier device is present" and "you have not enrolled Windows
+// Hello" send a person to two different places, and "disabled by policy" sends
+// them to a third.
+func Availability() (UserConsentVerifierAvailability, error) {
+	cleanup, err := initRuntime()
+	if err != nil {
+		return 0, err
+	}
+	defer cleanup()
+	return checkAvailability()
+}
+
+// Verify surfaces the Windows Hello prompt and returns what Windows said,
+// unreduced.
+//
+// [RequireUserConsent] folds every outcome that is not [UserConsentVerified]
+// into false, which suits a caller treating Hello as a best-effort extra gate.
+// It does NOT suit a caller that must distinguish a person who FAILED from a
+// machine that could not ask: telling somebody they failed a fingerprint check
+// on a computer with no fingerprint reader sends them to try harder at
+// something that does not exist.
+//
+// So this returns the result itself. [UserConsentDeviceNotPresent],
+// [UserConsentNotConfiguredForUser] and [UserConsentDisabledByPolicy] are
+// "nothing here to ask"; [UserConsentCanceled] and
+// [UserConsentRetriesExhausted] are answers from a person who was there.
+//
+// It displays system UI and must run on an interactive session.
+func Verify(reason string) (UserConsentVerificationResult, error) {
+	cleanup, err := initRuntime()
+	if err != nil {
+		return 0, err
 	}
 	defer cleanup()
 
 	avail, err := checkAvailability()
 	if err != nil {
-		return false, err
+		return 0, err
 	}
+	// Windows would say the same thing itself, but asking first means the
+	// prompt is never raised on a machine that cannot honour it.
 	if avail != UserConsentVerifierAvailable {
-		return false, nil
+		return availabilityAsResult(avail), nil
 	}
 
 	op, err := ui.UserConsentVerifierRequestVerificationAsync(reason)
 	if err != nil {
-		return false, fmt.Errorf("winrt: RequestVerificationAsync: %w", err)
+		return 0, fmt.Errorf("winrt: RequestVerificationAsync: %w", err)
 	}
 	defer release(unsafe.Pointer(op))
 	res, err := awaitOperation(op)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	return UserConsentVerificationResult(uint32(res)) == UserConsentVerified, nil
+	return UserConsentVerificationResult(uint32(res)), nil
 }

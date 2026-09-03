@@ -131,3 +131,43 @@ func itoa(v int32) string {
 	}
 	return string(buf[i:])
 }
+
+// availabilityAsResult carries an availability answer over to the result
+// vocabulary.
+//
+// The two enums overlap in the four cases that matter and number them
+// identically -- DeviceNotPresent, NotConfiguredForUser, DisabledByPolicy and
+// DeviceBusy are 1, 2, 3 and 4 in both. They are still translated by NAME
+// rather than by a cast: the numbers agreeing today is not a promise, and a
+// silent cast would turn a future divergence into a wrong reason rather than a
+// compile error.
+func availabilityAsResult(a UserConsentVerifierAvailability) UserConsentVerificationResult {
+	switch a {
+	case UserConsentVerifierDeviceNotPresent:
+		return UserConsentDeviceNotPresent
+	case UserConsentVerifierNotConfiguredForUser:
+		return UserConsentNotConfiguredForUser
+	case UserConsentVerifierDisabledByPolicy:
+		return UserConsentDisabledByPolicy
+	case UserConsentVerifierDeviceBusy:
+		return UserConsentDeviceBusy
+	}
+	// Available, or something this package has not been taught. Neither is an
+	// outcome of a prompt that was never shown, so the honest answer is that
+	// the device was not there to ask.
+	return UserConsentDeviceNotPresent
+}
+
+// Asked reports whether a result came from somebody who was actually asked.
+//
+// A person who cancelled, or who ran out of attempts, was there and answered.
+// A machine with no verifier, no enrolment or a policy against it answered
+// nothing at all, and a caller that counted that as a failure would be
+// accusing somebody who was never shown a prompt.
+func (r UserConsentVerificationResult) Asked() bool {
+	switch r {
+	case UserConsentVerified, UserConsentCanceled, UserConsentRetriesExhausted:
+		return true
+	}
+	return false
+}

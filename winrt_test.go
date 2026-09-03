@@ -73,3 +73,49 @@ func TestItoa(t *testing.T) {
 		}
 	}
 }
+
+// TestAvailabilityBecomesTheRightReason. The point of the translation is that
+// somebody is told what to DO: no reader, no enrolment and a policy against it
+// send a person to three different places.
+func TestAvailabilityBecomesTheRightReason(t *testing.T) {
+	for _, c := range []struct {
+		in   UserConsentVerifierAvailability
+		want UserConsentVerificationResult
+	}{
+		{UserConsentVerifierDeviceNotPresent, UserConsentDeviceNotPresent},
+		{UserConsentVerifierNotConfiguredForUser, UserConsentNotConfiguredForUser},
+		{UserConsentVerifierDisabledByPolicy, UserConsentDisabledByPolicy},
+		{UserConsentVerifierDeviceBusy, UserConsentDeviceBusy},
+		// Available means no prompt outcome exists yet, and something this
+		// package has not been taught means the same: neither is an answer
+		// from a person.
+		{UserConsentVerifierAvailable, UserConsentDeviceNotPresent},
+		{UserConsentVerifierAvailability(99), UserConsentDeviceNotPresent},
+	} {
+		if got := availabilityAsResult(c.in); got != c.want {
+			t.Errorf("availabilityAsResult(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// TestAskedSeparatesAPersonFromAMachine. Counting "no verifier on this
+// computer" as a failure accuses somebody who was never shown a prompt.
+func TestAskedSeparatesAPersonFromAMachine(t *testing.T) {
+	for _, c := range []struct {
+		in   UserConsentVerificationResult
+		want bool
+	}{
+		{UserConsentVerified, true},
+		{UserConsentCanceled, true},
+		{UserConsentRetriesExhausted, true},
+		{UserConsentDeviceNotPresent, false},
+		{UserConsentNotConfiguredForUser, false},
+		{UserConsentDisabledByPolicy, false},
+		{UserConsentDeviceBusy, false},
+		{UserConsentVerificationResult(99), false},
+	} {
+		if got := c.in.Asked(); got != c.want {
+			t.Errorf("%v.Asked() = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
